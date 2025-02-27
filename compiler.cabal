@@ -1,0 +1,26 @@
+cabal-version:      3.0
+name:               compiler
+version:            0.0.1
+build-type:         Simple
+
+common warnings
+    ghc-options: -Wall
+
+executable compiler
+    import: warnings
+    main-is: Main.hs
+    other-modules:
+        Frontend.Lex,
+        Frontend.Parse,
+        Frontend.SemAnalysis,
+        Frontend.AST
+    build-depends:
+        base,
+        megaparsec,
+        parser-combinators,
+        mtl,
+        text,
+        either,
+        containers
+    hs-source-dirs:   src
+    default-language: Haskell2010

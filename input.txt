@@ -1,0 +1,5 @@
+fn foo(a: int) int {
+    return bar(a, a + 42 - 4);
+}
+
+fn bar(a: int, b: int) void {}
