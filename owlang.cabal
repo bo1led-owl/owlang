@@ -1,12 +1,12 @@
 cabal-version:      3.0
-name:               compiler
+name:               owlang
 version:            0.0.1
 build-type:         Simple
 
 common warnings
     ghc-options: -Wall
 
-executable compiler
+executable owl
     import: warnings
     main-is: Main.hs
     other-modules:
