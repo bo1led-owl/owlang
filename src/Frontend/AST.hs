@@ -3,9 +3,8 @@
 
 module Frontend.AST
   ( AST,
-    Default (..),
-    Name,
     Type,
+    Default (..),
     Block,
     Decl (..),
     Stmt (..),
@@ -21,16 +20,15 @@ where
 
 import Data.List
 import qualified Data.Map as M
+import Types
+
+type Type = String
 
 class Default a where
   defaultValue :: a
 
 instance Default [a] where
   defaultValue = []
-
-type Name = String
-
-type Type = String
 
 type Block = [Stmt]
 
@@ -62,7 +60,7 @@ instance Default Stmt where
 
 data Expr
   = VarRefExpr Name
-  | FnCallExpr Name [Expr]
+  | CallExpr Name [Expr]
   | BinExpr BinOp Expr Expr
   | UnaryExpr UnaryOp Expr
   | NumLitExpr Integer
@@ -78,9 +76,9 @@ instance Show UnaryOp where
   show UnaryMinus = "`-`"
 
 data BinOp
-  = BinMul
-  | BinPlus
+  = BinPlus
   | BinMinus
+  | BinMul
   | BinAssign
 
 type Precedence = Int
@@ -127,9 +125,9 @@ showDecl level name (VarDecl t e) =
 
 showExpr :: Int -> Expr -> String
 showExpr level (VarRefExpr n) = indent level ++ "VarRefExpr " ++ n
-showExpr level (FnCallExpr n es) =
+showExpr level (CallExpr n es) =
   indent level
-    ++ "FnCallExpr "
+    ++ "CallExpr "
     ++ n
     ++ lf
     ++ intercalate lf (map (showExpr (level + 1)) es)

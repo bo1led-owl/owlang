@@ -7,6 +7,7 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
 import Data.Maybe
 import Frontend.AST
+import Types
 
 type Error = String
 
@@ -14,7 +15,7 @@ class SemanticAnalyzer a where
   makeUnaryExpr :: a -> UnaryOp -> Expr -> Either Error Expr
   makeBinaryExpr :: a -> BinOp -> Expr -> Expr -> Either Error Expr
   makeVarRefExpr :: a -> Name -> Either Error Expr
-  makeFnCallExpr :: a -> Name -> [Expr] -> Either Error Expr
+  makeCallExpr :: a -> Name -> [Expr] -> Either Error Expr
   makeVarDecl :: a -> Type -> Expr -> Either Error Decl
   makeFnDecl :: a -> [FnArg] -> Type -> Block -> Either Error Decl
   modifyAST :: (AST -> AST) -> a -> a
@@ -33,7 +34,7 @@ instance SemanticAnalyzer DummySemAnalyzer where
   makeUnaryExpr _ op e = Right (UnaryExpr op e)
   makeBinaryExpr _ op l r = Right (BinExpr op l r)
   makeVarRefExpr _ n = Right (VarRefExpr n)
-  makeFnCallExpr _ n args = Right (FnCallExpr n args)
+  makeCallExpr _ n args = Right (CallExpr n args)
   makeVarDecl _ t e = Right $ VarDecl t e
   makeFnDecl _ args t b = Right $ FnDecl args t b
   modifyAST f (DummySemAnalyzer ast) = DummySemAnalyzer (f ast)
@@ -62,12 +63,12 @@ instance SemanticAnalyzer ActualSemAnalyzer where
       Just (VarDecl {}) -> Right $ VarRefExpr n
     where
       undef = Left $ "undefined variable `" ++ n ++ "`"
-  makeFnCallExpr (ActualSemAnalyzer ast) n args =
+  makeCallExpr (ActualSemAnalyzer ast) n args =
     case M.lookup n ast of
       Nothing -> undef
       Just (VarDecl {}) -> undef
       Just (FnDecl params _ _) ->
-        checkLengths (length params) (length args) *> Right (FnCallExpr n args)
+        checkLengths (length params) (length args) *> Right (CallExpr n args)
     where
       undef = Left $ "undefined function `" ++ n ++ "`"
       checkLengths expected actual
@@ -80,7 +81,7 @@ instance SemanticAnalyzer ActualSemAnalyzer where
   makeVarDecl (ActualSemAnalyzer ast) t e =
     let actualType = getType ast e
      in if t `typeEq` actualType
-          then Right (VarDecl t e)
+          then Right $ VarDecl actualType e
           else Left $ "unmatched types: expected `" ++ show t ++ "`, got `" ++ show actualType ++ "`"
   makeFnDecl (ActualSemAnalyzer ast) args t b = do
     if not $ checkArgs args
@@ -101,7 +102,9 @@ instance SemanticAnalyzer ActualSemAnalyzer where
 getType :: AST -> Expr -> Type
 getType _ (NumLitExpr _) = "int"
 getType ast (VarRefExpr name) = maybe "" getDeclType (M.lookup name ast)
-getType _ _ = ""
+getType ast (CallExpr name _) = maybe "" getDeclType (M.lookup name ast)
+getType ast (BinExpr _ lhs _) = getType ast lhs
+getType ast (UnaryExpr _ e) = getType ast e
 
 getDeclType :: Decl -> Type
 getDeclType (FnDecl _ t _) = t

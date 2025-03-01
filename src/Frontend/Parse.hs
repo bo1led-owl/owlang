@@ -5,10 +5,10 @@
 module Frontend.Parse (parse) where
 
 import Control.Applicative
-import Control.Monad.State as S
+import qualified Control.Monad.State as S
 import Data.Either.Combinators
-import Data.Foldable (foldl')
 import Data.Functor
+import Data.List
 import Data.List.NonEmpty (NonEmpty (..))
 import qualified Data.Map as M
 import qualified Data.Set as Set
@@ -18,6 +18,7 @@ import Frontend.Lex
 import Frontend.SemAnalysis
 import Text.Megaparsec hiding (State, Token, many, parse, some, token)
 import qualified Text.Megaparsec as MP
+import Types
 
 type Parser s = ParsecT Void TokenStream (S.State s)
 
@@ -96,7 +97,7 @@ term =
             )
             expr
         ),
-      try fnCall,
+      try call,
       try varRef,
       try unaryExpr,
       numLitExpr
@@ -106,14 +107,14 @@ term =
     varRef = do
       off <- getOffset
       name <- identifier
-      analyzer <- get
+      analyzer <- S.get
       handleSemanticAnalyzerError off (makeVarRefExpr analyzer name)
-    fnCall = do
+    call = do
       off <- getOffset
       name <- identifier
       args <- parens (expr `sepEndBy` token Comma)
-      analyzer <- get
-      handleSemanticAnalyzerError off (makeFnCallExpr analyzer name args)
+      analyzer <- S.get
+      handleSemanticAnalyzerError off (makeCallExpr analyzer name args)
     unaryExpr = do
       UnaryExpr
         <$> choice [try $ token Minus $> UnaryMinus]
@@ -137,10 +138,19 @@ binExpr opPrec lhs = do
       e <- handleBinExpr op lhs rhs
       binExpr opPrec e
   where
+    opTable =
+      [ (Minus, BinMinus),
+        (Plus, BinPlus),
+        (Mul, BinMul),
+        (Assign, BinAssign)
+      ]
     getCurPrec = option (-1) (lookAhead (try (precedence <$> binOp)))
-    binOp = try (token Minus $> BinMinus) <|> try (token Plus $> BinPlus) <|> (token Mul $> BinMul)
+    binOp =
+      choice $ case unsnoc opTable of
+        Just (h, (tok, op)) -> map (\(t, op) -> try $ token t $> op) h ++ [token tok $> op]
+        Nothing -> []
     handleBinExpr op lhs rhs = do
-      analyzer <- get
+      analyzer <- S.get
       case makeBinaryExpr analyzer op lhs rhs of
         (Left err) -> fail err
         (Right e) -> return e
@@ -183,7 +193,7 @@ fnDecl = do
     withRecovery
       (recoverAndRegErr (skipManyTill anySingle (lookAhead $ try $ token LBrace)))
       (parens (withRecovery handleArgErr (try (fnArg `sepEndBy` token Comma))))
-  (lift . S.modify)
+  (S.lift . S.modify)
     ( modifyAST
         ( flip
             (foldl' (\ast (FnArg n t) -> M.insert n (VarDecl t defaultValue) ast))
@@ -198,7 +208,7 @@ fnDecl = do
   body <- block
   analyzer <- S.get
   d <- handleSemanticAnalyzerError off (makeFnDecl analyzer args rettype body)
-  lift $ S.put $ addDecl' name d prevAnalyzer
+  S.lift $ S.put $ addDecl' name d prevAnalyzer
   return (name, FnDecl args rettype body)
   where
     fnArg = FnArg <$> (identifier <* token Colon) <*> (identifier <?> "type")
@@ -217,7 +227,7 @@ varDecl = do
   v <- token Assign *> (expr <?> "initializer")
   analyzer <- S.get
   d <- handleSemanticAnalyzerError off (makeVarDecl analyzer t v)
-  lift $ S.put $ addDecl' name d analyzer
+  S.lift $ S.put $ addDecl' name d analyzer
   return (name, d)
 
 varDeclTopLevel :: (SemanticAnalyzer s) => Parser s (Name, Decl)
@@ -228,14 +238,14 @@ varDeclTopLevel = do
   name <- identifier
   t <- option "" (try (token Colon *> identifier))
   v <- token Assign *> (expr <?> "initializer")
-  analyzer <- get
+  analyzer <- S.get
   d <- handleSemanticAnalyzerError off (makeVarDecl analyzer t v)
   case addDecl name d prevAnalyzer of
     Left err -> do
       registerParseError (FancyError off (Set.singleton (ErrorFail err)))
       return (name, defaultValue)
     Right newAnalyzer -> do
-      lift $ S.put newAnalyzer
+      S.lift $ S.put newAnalyzer
       return (name, d)
 
 topLevelDecl :: (SemanticAnalyzer s) => Parser s (Name, Decl)
@@ -246,7 +256,7 @@ decls = token StartToken *> many topLevelDecl <* eof $> ()
 
 genericParse :: (SemanticAnalyzer s) => s -> String -> TokenStream -> Either (ParseErrorBundle TokenStream Void) AST
 genericParse analyzer filename toks =
-  let (res, st) = runState (runParserT decls filename toks) analyzer
+  let (res, st) = S.runState (runParserT decls filename toks) analyzer
    in mapRight (const $ getAST st) res
 
 parse :: String -> TokenStream -> Either (ParseErrorBundle TokenStream Void) AST
