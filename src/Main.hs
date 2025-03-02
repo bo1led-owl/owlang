@@ -46,4 +46,4 @@ main = do
         Left err -> printErrors err
         Right t -> case parse inputFile t of
           Left err -> printErrors err
-          Right ast -> printAST ast
+          Right ast -> putStr $ showAST ast

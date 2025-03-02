@@ -163,7 +163,7 @@ expr = do
 block :: (SemanticAnalyzer s) => Parser s Block
 block = braces $ do
   many (token Semicolon)
-  stmtWithRec `endBy` some (token Semicolon $> ())
+  stmtWithRec `endBy` someSemiWithRec
   where
     stmtWithRec =
       withRecovery
@@ -177,11 +177,10 @@ block = braces $ do
               Right _ -> fail ""
         )
         stmt
-
--- someSemiWithRec =
---   withRecovery
---     (recoverAndRegErr (skipManyTill anySingle ((lookAhead . try) $ token RBrace) $> ()))
---     (some $ token Semicolon)
+    someSemiWithRec =
+      withRecovery
+        (recoverAndRegErr (skipManyTill anySingle ((lookAhead . try) $ token RBrace) $> ()))
+        (some $ token Semicolon)
 
 fnDecl :: (SemanticAnalyzer s) => Parser s (Name, Decl)
 fnDecl = do

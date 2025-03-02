@@ -54,7 +54,7 @@ data Instr
   = AddInstr Dest Type Value Value
   | SubInstr Type Value Value
   | -- | ICmpInstr CmpCond Type Value Value
-    -- | BrInstr Value Label Label
+    -- | BrInstr Value Label Label |
     CallVoidInstr Name [Value]
   | CallInstr Dest Type Name [Value]
   | RetVoidInstr

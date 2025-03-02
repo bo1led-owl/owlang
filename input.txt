@@ -1,7 +1,7 @@
 fn foo(a: int) int {
     let b = a + 42;
-    b = b - 3;
+    b = bar(a, b, a - b);
     return b - a;
 }
 
-fn bar(a: int, b: int) void {}
+fn bar(a: int, b: int, c: int) int {return a + b * c;}

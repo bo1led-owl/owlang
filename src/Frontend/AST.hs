@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
 
@@ -14,12 +15,13 @@ module Frontend.AST
     BinOp (..),
     Precedence,
     precedence,
-    printAST,
+    showAST,
   )
 where
 
 import Data.List
 import qualified Data.Map as M
+import Data.Tree
 import Types
 
 type Type = String
@@ -73,7 +75,7 @@ data UnaryOp
   = UnaryMinus
 
 instance Show UnaryOp where
-  show UnaryMinus = "`-`"
+  show UnaryMinus = "-"
 
 data BinOp
   = BinPlus
@@ -89,83 +91,40 @@ precedence BinPlus = 2
 precedence BinMinus = 2
 precedence BinAssign = 1
 
+inTicks :: String -> String
+inTicks s = "`" ++ s ++ "`"
+
 instance Show BinOp where
-  show BinMul = "`*`"
-  show BinPlus = "`+`"
-  show BinMinus = "`-`"
-  show BinAssign = "`=`"
+  show BinMul = "*"
+  show BinPlus = "+"
+  show BinMinus = "-"
+  show BinAssign = "="
 
-lf :: String
-lf = "\n"
+class Printable a where
+  toNode :: a -> Tree String
 
-printAST :: AST -> IO ()
-printAST = mapM_ putStrLn . lines . showAST
+showAST :: AST -> String
+showAST ast = intercalate "\n" (map (unlines . filter notBars . lines . drawTree . toNode) (M.toList ast))
+  where
+    notBars = any (\x -> x /= ' ' && x /= '|')
 
-showAST decls = intercalate (lf ++ lf) (map (uncurry (showDecl 0)) (M.toList decls))
+instance Printable (Name, Decl) where
+  toNode (n, FnDecl args rt body) =
+    Node (n ++ "(" ++ intercalate ", " (map formatArg args) ++ ") " ++ inTicks rt) (map toNode body)
+    where
+      formatArg (FnArg n t) = n ++ ": " ++ inTicks t
+  toNode (n, VarDecl t e) = Node (n ++ " " ++ t) [toNode e]
 
-showDecl level name (FnDecl args rt block) =
-  indent level
-    ++ "FnDecl "
-    ++ name
-    ++ "("
-    ++ intercalate ", " (map (\(FnArg n t) -> n ++ ": `" ++ t ++ "`") args)
-    ++ ") `"
-    ++ rt
-    ++ "`"
-    ++ if null block then "" else lf ++ showBlock (level + 1) block
-showDecl level name (VarDecl t e) =
-  indent level
-    ++ "VarDecl "
-    ++ name
-    ++ " `"
-    ++ t
-    ++ "`"
-    ++ lf
-    ++ showExpr (level + 1) e
+instance Printable Expr where
+  toNode (VarRefExpr n) = Node ("VarRefExpr " ++ n) []
+  toNode (CallExpr n args) = Node ("CallExpr " ++ n) (map toNode args)
+  toNode (BinExpr op lhs rhs) = Node ("BinExpr " ++ inTicks (show op)) [toNode lhs, toNode rhs]
+  toNode (UnaryExpr op e) = Node ("UnaryExpr " ++ inTicks (show op)) [toNode e]
+  toNode (NumLitExpr n) = Node ("NumLitExpr " ++ show n) []
 
-showExpr :: Int -> Expr -> String
-showExpr level (VarRefExpr n) = indent level ++ "VarRefExpr " ++ n
-showExpr level (CallExpr n es) =
-  indent level
-    ++ "CallExpr "
-    ++ n
-    ++ lf
-    ++ intercalate lf (map (showExpr (level + 1)) es)
-showExpr level (BinExpr op lhs rhs) =
-  indent level
-    ++ "BinExpr "
-    ++ show op
-    ++ lf
-    ++ showExpr (level + 1) lhs
-    ++ lf
-    ++ showExpr (level + 1) rhs
-showExpr level (UnaryExpr op e) =
-  indent level
-    ++ "UnaryExpr "
-    ++ show op
-    ++ lf
-    ++ showExpr (level + 1) e
-showExpr level (NumLitExpr n) =
-  indent level
-    ++ "NumLitExpr "
-    ++ show n
-
-showStmt level (ExprStmt e) =
-  indent level
-    ++ "ExprStmt"
-    ++ lf
-    ++ showExpr (level + 1) e
-showStmt level (BlockStmt b) =
-  indent level
-    ++ "BlockStmt "
-    ++ lf
-    ++ showBlock (level + 1) b
-showStmt level (DeclStmt n d) = showDecl level n d
-showStmt level (RetStmt e) =
-  indent level
-    ++ "RetStmt"
-    ++ maybe "" (\e -> lf ++ showExpr (level + 1) e) e
-
-showBlock level block = intercalate lf (map (showStmt level) block)
-
-indent level = replicate (level * 2) ' '
+instance Printable Stmt where
+  toNode (ExprStmt e) = Node "ExprStmt" [toNode e]
+  toNode (BlockStmt b) = Node "BlockStmt" (map toNode b)
+  toNode (DeclStmt n (VarDecl t e)) = Node ("DeclStmt " ++ n ++ " " ++ inTicks t) [toNode e]
+  toNode (DeclStmt _ _) = undefined
+  toNode (RetStmt e) = Node "RetStmt" (maybe [] (singleton . toNode) e)
